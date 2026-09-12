@@ -13,8 +13,8 @@ const today = () => new Date().toISOString();
 
 export const mockUser = {
   id: "u1",
-  name: "Alex Carter",
-  email: "alex@timetoprogram.com",
+  name: "Gourav Sharma",
+  email: "gourav@timetoprogram.com",
   role: "owner",
   company: "Time To Program",
   avatar: "",

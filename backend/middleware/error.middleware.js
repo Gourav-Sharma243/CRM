@@ -1,12 +1,12 @@
-import { ApiError } from "../utils/ApiError";
+import { ApiError } from "../utils/ApiError.js";
 
 export const notFound = (req, res, next) => {
     next(new ApiError(404,`Route not found - ${req.method} ${req.originalUrl}`));
 };
 
 export const errorHandler = (err, req, res, next) => {
-    const statusCode = err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    let statusCode = err.statusCode || 500;
+    let message = err.message || "Internal Server Error";
 
     if(err.name === "CastError"){
         statusCode = 400;
@@ -15,8 +15,8 @@ export const errorHandler = (err, req, res, next) => {
 
     if(err.code === 11000){
         statusCode = 409;
-        const feild = Object.keys(err.keyValue|| {})[0] || "field";
-        message = `A record with that ${feild} already exists.`;
+        const field = Object.keys(err.keyValue|| {})[0] || "field";
+        message = `A record with that ${field} already exists.`;
     }
     if(err.name === "ValidationError"){
         statusCode = 400;

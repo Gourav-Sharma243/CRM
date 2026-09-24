@@ -1,4 +1,4 @@
-import {Note} from "../models/note.model.js";
+import {Note} from "../models/Note.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 

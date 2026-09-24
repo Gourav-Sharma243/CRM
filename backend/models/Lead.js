@@ -61,6 +61,12 @@ const leadSchema = new mongoose.Schema(
             type: [String],
             trim: true,
         }],
+        tags: [
+            {
+                type: String,
+                trim: true,
+            },
+        ],
         aiSummary: {
             type: String,
             default: "",

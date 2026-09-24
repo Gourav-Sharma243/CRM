@@ -23,7 +23,7 @@ export const errorHandler = (err, req, res, next) => {
         message = Object.values(err.errors).map((val) => val.message).join(", ");
     }
 
-    if(process.env.NODE_ENV === "production" && statusCode === 500){
+    if(process.env.NODE_ENV !== "production" || statusCode === 500){
         console.error(err);
     }
 

@@ -10,8 +10,8 @@ const toClientUser = (user) => ({
     role: user.role,
     createdAt: user.createdAt,
     company: user.company,
-    avtar: user.avtar,
-})
+    avatar: user.avatar || user.avtar || "",
+});
 
 export const registerUser = asyncHandler(async (req, res) => {
     const { name, email, password, role, company } = req.body;

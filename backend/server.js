@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -12,17 +14,37 @@ import noteRoutes from "./routes/note.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import analyticsRoutes from "./routes/analytics.routes.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+dotenv.config(); // Fallback to current working directory
+
 const app = express();
 
 app.use(
     cors({
-        origin: process.env.CLIENT_URL || "http://localhost:5173",
+        origin: (origin, callback) => {
+            // Allow all origins (standard for public SaaS APIs with Bearer token authentication)
+            callback(null, true);
+        },
         credentials: true,
     })
 );
 app.use(express.json({limit: "1mb"}))
 app.use(express.urlencoded({extended: true}));
 if(process.env.NODE_ENV !== "production") app.use(morgan("dev"));
+
+// Ensure DB is connected before processing API requests
+app.use(async (req, res, next) => {
+    try {
+        if (process.env.MONGO_URI || process.env.MONGO_URL) {
+            await connectDB();
+        }
+        next();
+    } catch (err) {
+        console.error("Database connection middleware error:", err.message);
+        next(err);
+    }
+});
 
 app.get("/api/health", (req, res) => {
     res.json({success: true, status: "ok", service: "TTP CRM API"})
@@ -49,10 +71,17 @@ const start = async () => {
         );   
     } catch (error) {
         console.error("Failed to connect to the database", error);
-        process.exit(1);
     }
 };
 
-start();
+// Only bind to local port if run directly, not when imported by serverless handlers
+const isMainModule = process.argv[1] && (
+    fileURLToPath(import.meta.url) === path.resolve(process.argv[1]) ||
+    process.argv[1].endsWith("server.js")
+);
+
+if (isMainModule && !process.env.VERCEL) {
+    start();
+}
 
 export default app;

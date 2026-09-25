@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   DndContext,
   DragOverlay,
@@ -18,6 +19,9 @@ import { CSS } from "@dnd-kit/utilities";
 import { Sparkles, GripVertical, Building2, TrendingUp, Layers, Target, DollarSign } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
 import { DateRangePicker } from "../components/common/DateRangePicker";
+import { LeadDrawer } from "../components/leads/LeadDrawer";
+import { LeadFormDialog } from "../components/leads/LeadFormDialog";
+import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { Spinner, Avatar, Badge, Card } from "../components/ui";
 import { leadsApi, aiApi } from "../lib/services";
 import { currency } from "../lib/format";
@@ -33,27 +37,89 @@ const toBoard = (leads) => {
 };
 
 export default function Pipeline() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [rawLeads, setRawLeads] = useState(null);
   const [dateRange, setDateRange] = useState({ preset: "all", start: "", end: "" });
   const [board, setBoard] = useState(null);
   const [activeId, setActiveId] = useState(null);
 
+  const [drawerLead, setDrawerLead] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [toDelete, setToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  useEffect(() => {
+  const reloadLeads = () => {
     leadsApi
       .list()
       .then((res) => {
         setRawLeads(res.leads);
         setBoard(toBoard(res.leads));
+        if (drawerLead) {
+          const updated = res.leads.find((l) => l._id === drawerLead._id);
+          if (updated) setDrawerLead(updated);
+        }
       })
       .catch(() => {
         setRawLeads([]);
         setBoard(toBoard([]));
       });
+  };
+
+  useEffect(() => {
+    reloadLeads();
   }, []);
+
+  /* ── Deep link auto-open via ?leadId=... ───────────────────────────── */
+  useEffect(() => {
+    const leadId = searchParams.get("leadId");
+    if (leadId && rawLeads) {
+      const match = rawLeads.find((l) => l._id === leadId);
+      if (match) setDrawerLead(match);
+    }
+  }, [searchParams, rawLeads]);
+
+  const handleDrawerClose = () => {
+    setDrawerLead(null);
+    if (searchParams.get("leadId")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("leadId");
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const openEdit = (lead) => {
+    setEditing(lead);
+    setFormOpen(true);
+  };
+
+  const handleSaved = () => {
+    reloadLeads();
+    setFormOpen(false);
+    setEditing(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await leadsApi.remove(toDelete._id);
+      toast.success("Lead removed");
+      setToDelete(null);
+      if (drawerLead?._id === toDelete._id) {
+        handleDrawerClose();
+      }
+      reloadLeads();
+    } catch (err) {
+      toast.error(err.message || "Failed to delete lead");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   /* ── Timeline date filtering ────────────────────────────────────────── */
   const effectiveLeads = useMemo(() => {
@@ -221,7 +287,12 @@ export default function Pipeline() {
       >
         <div className="flex gap-4 overflow-x-auto pb-4">
           {PIPELINE_STAGES.map((stage) => (
-            <Column key={stage} stage={stage} leads={board[stage]} />
+            <Column
+              key={stage}
+              stage={stage}
+              leads={board[stage]}
+              onOpenLead={(lead) => setDrawerLead(lead)}
+            />
           ))}
         </div>
 
@@ -229,6 +300,32 @@ export default function Pipeline() {
           {activeLead ? <LeadCard lead={activeLead} overlay /> : null}
         </DragOverlay>
       </DndContext>
+
+      {/* Lead details drawer & dialogs */}
+      <LeadDrawer
+        open={Boolean(drawerLead)}
+        onClose={handleDrawerClose}
+        lead={drawerLead}
+        onEdit={openEdit}
+        onDelete={setToDelete}
+      />
+      <LeadFormDialog
+        open={formOpen}
+        onClose={() => {
+          setFormOpen(false);
+          setEditing(null);
+        }}
+        lead={editing}
+        onSaved={handleSaved}
+      />
+      <ConfirmDialog
+        open={Boolean(toDelete)}
+        onClose={() => setToDelete(null)}
+        onConfirm={confirmDelete}
+        loading={deleting}
+        title="Delete this lead?"
+        description={`"${toDelete?.name}" will be permanently removed.`}
+      />
     </div>
   );
 }
@@ -251,7 +348,7 @@ function StatTile({ icon: Icon, label, value, tint }) {
 }
 
 /* ── Column ─────────────────────────────────────────────────────────── */
-function Column({ stage, leads }) {
+function Column({ stage, leads, onOpenLead }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const style = STAGE_STYLES[stage];
   const value = leads.reduce((s, l) => s + (l.value || 0), 0);
@@ -288,7 +385,7 @@ function Column({ stage, leads }) {
           strategy={verticalListSortingStrategy}
         >
           {leads.map((lead) => (
-            <SortableCard key={lead._id} lead={lead} />
+            <SortableCard key={lead._id} lead={lead} onOpen={onOpenLead} />
           ))}
         </SortableContext>
         {leads.length === 0 && (
@@ -300,7 +397,7 @@ function Column({ stage, leads }) {
 }
 
 /* ── Sortable card wrapper ──────────────────────────────────────────── */
-function SortableCard({ lead }) {
+function SortableCard({ lead, onOpen }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: lead._id });
 
@@ -310,13 +407,17 @@ function SortableCard({ lead }) {
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(isDragging && "opacity-40", "w-full min-w-0")}
     >
-      <LeadCard lead={lead} dragHandle={{ attributes, listeners }} />
+      <LeadCard
+        lead={lead}
+        dragHandle={{ attributes, listeners }}
+        onOpen={onOpen}
+      />
     </div>
   );
 }
 
 /* ── Card UI ────────────────────────────────────────────────────────── */
-function LeadCard({ lead, dragHandle, overlay }) {
+function LeadCard({ lead, dragHandle, overlay, onOpen }) {
   const [suggesting, setSuggesting] = useState(false);
 
   // AI: suggest the next best action / priority for this lead.
@@ -338,9 +439,12 @@ function LeadCard({ lead, dragHandle, overlay }) {
 
   return (
     <div
+      onClick={() => onOpen && onOpen(lead)}
       className={cn(
-        "group flex flex-col justify-between rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60 h-auto w-full min-w-0",
-        overlay ? "shadow-[var(--shadow-pop)] rotate-2" : "hover:shadow-[var(--shadow-card)]"
+        "group flex flex-col justify-between rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60 h-auto w-full min-w-0 cursor-pointer select-none",
+        overlay
+          ? "shadow-[var(--shadow-pop)] rotate-2 cursor-grabbing"
+          : "hover:shadow-[var(--shadow-card)] hover:border-brand-300"
       )}
     >
       {/* Name / company row + drag handle */}
@@ -348,7 +452,7 @@ function LeadCard({ lead, dragHandle, overlay }) {
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
           <Avatar name={lead.name} size="sm" className="mt-0.5 shrink-0" />
           <div className="min-w-0 flex-1">
-            <h4 className="text-sm font-semibold text-ink leading-snug break-words">
+            <h4 className="text-sm font-semibold text-ink leading-snug break-words group-hover:text-brand-600 transition-colors">
               {lead.name}
             </h4>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft truncate">
@@ -361,6 +465,7 @@ function LeadCard({ lead, dragHandle, overlay }) {
           <button
             {...dragHandle.attributes}
             {...dragHandle.listeners}
+            onClick={(e) => e.stopPropagation()}
             className="cursor-grab text-ink-soft/40 transition hover:text-ink-soft active:cursor-grabbing shrink-0 mt-0.5 p-0.5 -mr-0.5 rounded hover:bg-surface-muted"
             aria-label="Drag"
           >

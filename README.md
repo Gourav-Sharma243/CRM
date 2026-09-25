@@ -10,10 +10,6 @@
 
 **Nexus CRM** is a modern, full-stack Customer Relationship Management (CRM) platform engineered for high-velocity sales teams. It combines real-time deal tracking, interactive Kanban pipeline management, and **Google Gemini Generative AI** to analyze sales leads, score deal risks, recommend next best actions, and draft personalized outreach emails.
 
-<p align="center">
-  <img src="./screenshots/landing_page.png" alt="Nexus CRM Landing & Authentication Page" width="100%" />
-</p>
-
 ---
 
 ## 🚀 Live Demo & Credentials

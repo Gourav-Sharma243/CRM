@@ -19,7 +19,7 @@ export function AuthShell({ children }) {
             Close more deals with an AI co-pilot in your pipeline.
           </h2>
           <p className="mt-4 max-w-md text-white/70">
-            Nexus CRM unifies your leads, contacts and follow-ups — then layers
+            Nexus CRM unifies your leads, contacts and follow-ups - then layers
             Gemini-powered summaries, email drafts and sales insights on top.
           </p>
 

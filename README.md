@@ -1,4 +1,4 @@
-# Nexus CRM — AI-Powered Sales Intelligence Platform
+# Nexus CRM - AI-Powered Sales Intelligence Platform
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-nexus--crm1.vercel.app-6366f1?style=for-the-badge&logo=vercel&logoColor=white)](https://nexus-crm1.vercel.app/)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Gourav-Sharma243/CRM)

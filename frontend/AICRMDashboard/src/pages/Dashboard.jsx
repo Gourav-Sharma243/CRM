@@ -165,11 +165,30 @@ export default function Dashboard() {
     }));
   }, [displayLeads]);
 
+  const PRESET_LABELS = {
+    all: "All Time",
+    "this-month": "This Month (Sep 2026)",
+    "last-month": "Last Month (Aug 2026)",
+    "last-30": "Last 30 Days",
+    "last-90": "Last 90 Days",
+    "year-2026": "Full Year 2026",
+    custom: "Custom Range",
+  };
+
+  const handleSelectPeriod = (period) => {
+    if (selectedPeriod === period || !period) {
+      setSelectedPeriod(null);
+    } else {
+      setSelectedPeriod(period);
+      setDateRange({ preset: "all", start: "", end: "" });
+    }
+  };
+
   const filterDescription = selectedPeriod
     ? (range === "annually" ? `Year ${selectedPeriod}` : `${selectedPeriod} 2026`)
     : dateRange.preset === "custom"
     ? `${dateRange.start} to ${dateRange.end}`
-    : dateRange.preset;
+    : PRESET_LABELS[dateRange.preset] || dateRange.preset;
 
   const leadsFilterUrl = selectedPeriod
     ? `/leads?period=${selectedPeriod}`
@@ -299,7 +318,7 @@ export default function Dashboard() {
               <EngagementChart
                 trend={currentChartData}
                 selectedPeriod={selectedPeriod}
-                onSelectPeriod={setSelectedPeriod}
+                onSelectPeriod={handleSelectPeriod}
                 range={range}
               />
             </div>
@@ -562,6 +581,31 @@ function TopDeals({ leads }) {
 }
 
 /* ── Engagement bar chart with a highlighted peak + interactive period click ──── */
+function ClickableXAxisTick({ x, y, payload, selectedPeriod, onSelectMonth }) {
+  const isSelected = selectedPeriod === payload?.value;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text
+        x={0}
+        y={0}
+        dy={14}
+        textAnchor="middle"
+        fill={isSelected ? "#0284c7" : "#64748b"}
+        fontWeight={isSelected ? 700 : 500}
+        fontSize={12}
+        cursor="pointer"
+        className="cursor-pointer hover:fill-sky-700 transition"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onSelectMonth && payload?.value) onSelectMonth(payload.value);
+        }}
+      >
+        {payload?.value}
+      </text>
+    </g>
+  );
+}
+
 function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
   const counts = trend.map((t) => t.leads);
   const max = Math.max(...counts, 1);
@@ -605,7 +649,7 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
   const handleBarClick = (data) => {
     if (!data || !data.month) return;
     if (onSelectPeriod) {
-      onSelectPeriod(selectedPeriod === data.month ? null : data.month);
+      onSelectPeriod(data.month);
     }
   };
 
@@ -617,9 +661,12 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
           barCategoryGap="28%"
           margin={{ top: 30 }}
           onClick={(state) => {
-            if (state && state.activePayload && state.activePayload.length > 0) {
-              const clickedMonth = state.activePayload[0].payload.month;
-              handleBarClick({ month: clickedMonth });
+            const month =
+              state?.activePayload?.[0]?.payload?.month ||
+              state?.activeLabel ||
+              (state?.activeTooltipIndex !== undefined ? trend[state.activeTooltipIndex]?.month : null);
+            if (month) {
+              handleBarClick({ month });
             }
           }}
         >
@@ -628,8 +675,14 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
             dataKey="month"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#64748b", fontSize: 12, cursor: "pointer" }}
             dy={6}
+            tick={(props) => (
+              <ClickableXAxisTick
+                {...props}
+                selectedPeriod={selectedPeriod}
+                onSelectMonth={(m) => handleBarClick({ month: m })}
+              />
+            )}
           />
           <YAxis
             axisLine={false}
@@ -640,7 +693,13 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
           />
           <Tooltip
             cursor={{ fill: "rgba(14, 165, 233, 0.08)", rx: 8, ry: 8 }}
-            content={<ChartTooltip unit=" leads" hint="Click bar to filter page" />}
+            wrapperStyle={{ pointerEvents: "auto", zIndex: 40 }}
+            content={
+              <ChartTooltip
+                unit=" leads"
+                onSelectMonth={(month) => handleBarClick({ month })}
+              />
+            }
           />
           <Bar
             dataKey="leads"
@@ -648,6 +707,10 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
             maxBarSize={42}
             label={renderLabel}
             cursor="pointer"
+            onClick={(entry, index) => {
+              const month = entry?.month || entry?.payload?.month || trend[index]?.month;
+              if (month) handleBarClick({ month });
+            }}
           >
             {trend.map((t, i) => {
               const isSelected = selectedPeriod === t.month;
@@ -663,6 +726,11 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
                   fill={fill}
                   stroke={isSelected ? "#0369a1" : "transparent"}
                   strokeWidth={isSelected ? 2 : 0}
+                  cursor="pointer"
+                  onClick={(e) => {
+                    e?.stopPropagation?.();
+                    handleBarClick({ month: t.month });
+                  }}
                   className="transition-all duration-200 hover:opacity-80 cursor-pointer"
                 />
               );
@@ -670,16 +738,42 @@ function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-      <div className="mt-1 flex items-center justify-between text-[11px] text-ink-soft">
-        <span>Click any {range === "annually" ? "year" : "month"} bar to filter the whole dashboard</span>
-        {selectedPeriod && (
-          <button
-            onClick={() => onSelectPeriod(null)}
-            className="font-medium text-brand-700 hover:underline"
-          >
-            Clear selection ({selectedPeriod})
-          </button>
-        )}
+
+      {/* Quick period selector pills */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line/60 pt-3">
+        <span className="text-[11px] font-medium text-ink-soft mr-1">
+          Select {range === "annually" ? "Year" : "Month"}:
+        </span>
+        <button
+          type="button"
+          onClick={() => onSelectPeriod(null)}
+          className={cn(
+            "rounded-lg px-2.5 py-1 text-xs font-semibold transition cursor-pointer",
+            !selectedPeriod
+              ? "bg-brand-600 text-white shadow-sm"
+              : "bg-surface-muted text-ink-soft hover:bg-slate-200 hover:text-ink"
+          )}
+        >
+          All
+        </button>
+        {trend.map((item) => {
+          const isSelected = selectedPeriod === item.month;
+          return (
+            <button
+              key={item.month}
+              type="button"
+              onClick={() => handleBarClick({ month: item.month })}
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-xs font-medium transition cursor-pointer",
+                isSelected
+                  ? "bg-sky-600 text-white font-bold shadow-sm ring-2 ring-sky-300"
+                  : "bg-surface-muted text-ink-soft hover:bg-slate-200 hover:text-ink"
+              )}
+            >
+              {item.month} ({item.leads})
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -702,17 +796,37 @@ function BalanceChart({ trend }) {
   );
 }
 
-function ChartTooltip({ active, payload, label, prefix = "", unit = "", hint }) {
+function ChartTooltip({ active, payload, label, prefix = "", unit = "", onSelectMonth }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-line bg-surface px-3 py-2 shadow-[var(--shadow-pop)]">
-      <p className="text-xs font-medium text-ink-soft">{label}</p>
-      <p className="text-sm font-semibold text-ink">
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        if (onSelectMonth && label) onSelectMonth(label);
+      }}
+      className="rounded-xl border border-sky-300 bg-surface/95 backdrop-blur-sm p-3 shadow-lg cursor-pointer transition hover:border-sky-500 hover:shadow-xl select-none"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-bold text-ink">{label}</p>
+        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+          Click to filter
+        </span>
+      </div>
+      <p className="mt-1 text-base font-bold text-ink">
         {prefix}
         {Number(payload[0].value).toLocaleString()}
         {unit}
       </p>
-      {hint && <p className="mt-1 text-[10px] text-sky-600 font-medium">{hint}</p>}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (onSelectMonth && label) onSelectMonth(label);
+        }}
+        className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-sky-600 hover:text-sky-800 underline cursor-pointer"
+      >
+        Filter dashboard by {label} →
+      </button>
     </div>
   );
 }

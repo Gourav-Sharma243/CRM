@@ -320,7 +320,6 @@ export default function Dashboard() {
             <p className="text-center font-display text-3xl font-bold tracking-tight text-ink">
               {currency(effectiveStats.revenueWon)}
             </p>
-            </p>
             <BalanceChart trend={data?.trend || []} />
             <div className="mt-4 flex items-center gap-2">
               <Link
@@ -554,56 +553,127 @@ function TopDeals({ leads }) {
   );
 }
 
-/* ── Engagement bar chart with a highlighted peak + floating bubble ──── */
-function EngagementChart({ trend }) {
+/* ── Engagement bar chart with a highlighted peak + interactive period click ──── */
+function EngagementChart({ trend, selectedPeriod, onSelectPeriod, range }) {
   const counts = trend.map((t) => t.leads);
   const max = Math.max(...counts, 1);
   const maxIndex = counts.indexOf(max);
   const prev = maxIndex > 0 ? counts[maxIndex - 1] : 0;
   const growth = prev > 0 ? Math.round(((max - prev) / prev) * 1000) / 10 : 17.8;
 
-  // Custom label: render a rounded "+x%" bubble above the tallest bar only.
-  const renderPeak = (props) => {
+  // Custom label: render a rounded "+x%" bubble above the tallest bar only (or selected indicator)
+  const renderLabel = (props) => {
     const { x, y, width, index } = props;
-    if (index !== maxIndex) return null;
+    const item = trend[index];
+    const isSelected = selectedPeriod && item?.month === selectedPeriod;
     const cx = x + width / 2;
-    return (
-      <g>
-        <circle cx={cx} cy={y} r={5} fill="#0369a1" stroke="#fff" strokeWidth={2} />
-        <rect x={cx - 26} y={y - 34} width={52} height={22} rx={11} fill="#0369a1" />
-        <text x={cx} y={y - 19} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff">
-          +{growth}%
-        </text>
-      </g>
-    );
+
+    if (isSelected) {
+      return (
+        <g>
+          <circle cx={cx} cy={y} r={5} fill="#0284c7" stroke="#fff" strokeWidth={2} />
+          <rect x={cx - 28} y={y - 32} width={56} height={20} rx={10} fill="#0284c7" />
+          <text x={cx} y={y - 18} textAnchor="middle" fontSize="10" fontWeight="700" fill="#fff">
+            Active
+          </text>
+        </g>
+      );
+    }
+
+    if (!selectedPeriod && index === maxIndex) {
+      return (
+        <g>
+          <circle cx={cx} cy={y} r={5} fill="#0369a1" stroke="#fff" strokeWidth={2} />
+          <rect x={cx - 26} y={y - 34} width={52} height={22} rx={11} fill="#0369a1" />
+          <text x={cx} y={y - 19} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fff">
+            +{growth}%
+          </text>
+        </g>
+      );
+    }
+    return null;
+  };
+
+  const handleBarClick = (data) => {
+    if (!data || !data.month) return;
+    if (onSelectPeriod) {
+      onSelectPeriod(selectedPeriod === data.month ? null : data.month);
+    }
   };
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <BarChart data={trend} barCategoryGap="28%" margin={{ top: 30 }}>
-        <CartesianGrid vertical={false} stroke="#e8eef3" strokeDasharray="4 4" />
-        <XAxis
-          dataKey="month"
-          axisLine={false}
-          tickLine={false}
-          tick={{ fill: "#64748b", fontSize: 12 }}
-          dy={6}
-        />
-        <YAxis
-          axisLine={false}
-          tickLine={false}
-          tick={{ fill: "#64748b", fontSize: 12 }}
-          width={30}
-          tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : v)}
-        />
-        <Tooltip cursor={{ fill: "#f1f5f9" }} content={<ChartTooltip unit=" leads" />} />
-        <Bar dataKey="leads" radius={[14, 14, 14, 14]} maxBarSize={42} label={renderPeak}>
-          {trend.map((t, i) => (
-            <Cell key={i} fill={i === maxIndex ? "#0369a1" : "#bae6fd"} />
-          ))}
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart
+          data={trend}
+          barCategoryGap="28%"
+          margin={{ top: 30 }}
+          onClick={(state) => {
+            if (state && state.activePayload && state.activePayload.length > 0) {
+              const clickedMonth = state.activePayload[0].payload.month;
+              handleBarClick({ month: clickedMonth });
+            }
+          }}
+        >
+          <CartesianGrid vertical={false} stroke="#e8eef3" strokeDasharray="4 4" />
+          <XAxis
+            dataKey="month"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#64748b", fontSize: 12, cursor: "pointer" }}
+            dy={6}
+          />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#64748b", fontSize: 12 }}
+            width={30}
+            tickFormatter={(v) => (v >= 1000 ? `${v / 1000}k` : v)}
+          />
+          <Tooltip
+            cursor={{ fill: "rgba(14, 165, 233, 0.08)", rx: 8, ry: 8 }}
+            content={<ChartTooltip unit=" leads" hint="Click bar to filter page" />}
+          />
+          <Bar
+            dataKey="leads"
+            radius={[14, 14, 14, 14]}
+            maxBarSize={42}
+            label={renderLabel}
+            cursor="pointer"
+          >
+            {trend.map((t, i) => {
+              const isSelected = selectedPeriod === t.month;
+              let fill;
+              if (selectedPeriod) {
+                fill = isSelected ? "#0284c7" : "#cbd5e1";
+              } else {
+                fill = i === maxIndex ? "#0369a1" : "#bae6fd";
+              }
+              return (
+                <Cell
+                  key={i}
+                  fill={fill}
+                  stroke={isSelected ? "#0369a1" : "transparent"}
+                  strokeWidth={isSelected ? 2 : 0}
+                  className="transition-all duration-200 hover:opacity-80 cursor-pointer"
+                />
+              );
+            })}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+      <div className="mt-1 flex items-center justify-between text-[11px] text-ink-soft">
+        <span>Click any {range === "annually" ? "year" : "month"} bar to filter the whole dashboard</span>
+        {selectedPeriod && (
+          <button
+            onClick={() => onSelectPeriod(null)}
+            className="font-medium text-brand-700 hover:underline"
+          >
+            Clear selection ({selectedPeriod})
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -624,7 +694,7 @@ function BalanceChart({ trend }) {
   );
 }
 
-function ChartTooltip({ active, payload, label, prefix = "", unit = "" }) {
+function ChartTooltip({ active, payload, label, prefix = "", unit = "", hint }) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-xl border border-line bg-surface px-3 py-2 shadow-[var(--shadow-pop)]">
@@ -634,6 +704,7 @@ function ChartTooltip({ active, payload, label, prefix = "", unit = "" }) {
         {Number(payload[0].value).toLocaleString()}
         {unit}
       </p>
+      {hint && <p className="mt-1 text-[10px] text-sky-600 font-medium">{hint}</p>}
     </div>
   );
 }

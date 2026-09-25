@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -21,17 +21,20 @@ import { Spinner, Avatar, Badge, Card } from "../components/ui";
 import { leadsApi, aiApi } from "../lib/services";
 import { currency } from "../lib/format";
 import { PIPELINE_STAGES, STAGE_STYLES, PRIORITY_STYLES } from "../lib/constants";
+import { DateRangePicker } from "../components/common/DateRangePicker";
 import { cn } from "../lib/utils";
 import { toast } from "sonner";
 
 /* Group a flat lead list into { stage: Lead[] } buckets. */
 const toBoard = (leads) => {
   const board = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, []]));
-  for (const l of leads) (board[l.status] || board.New).push(l);
+  for (const l of (leads || [])) (board[l.status] || board.New).push(l);
   return board;
 };
 
 export default function Pipeline() {
+  const [rawLeads, setRawLeads] = useState(null);
+  const [dateRange, setDateRange] = useState({ preset: "all", start: "", end: "" });
   const [board, setBoard] = useState(null);
   const [activeId, setActiveId] = useState(null);
 
@@ -42,9 +45,35 @@ export default function Pipeline() {
   useEffect(() => {
     leadsApi
       .list()
-      .then((res) => setBoard(toBoard(res.leads)))
-      .catch(() => setBoard(toBoard([])));
+      .then((res) => {
+        setRawLeads(res.leads);
+        setBoard(toBoard(res.leads));
+      })
+      .catch(() => {
+        setRawLeads([]);
+        setBoard(toBoard([]));
+      });
   }, []);
+
+  /* ── Timeline date filtering ────────────────────────────────────────── */
+  const effectiveLeads = useMemo(() => {
+    if (!rawLeads) return [];
+    if (!dateRange.start && !dateRange.end) return rawLeads;
+
+    const start = dateRange.start ? new Date(dateRange.start + "T00:00:00").getTime() : 0;
+    const end = dateRange.end ? new Date(dateRange.end + "T23:59:59.999").getTime() : Infinity;
+
+    return rawLeads.filter((l) => {
+      const d = new Date(l.createdAt || l.updatedAt).getTime();
+      return !Number.isNaN(d) && d >= start && d <= end;
+    });
+  }, [rawLeads, dateRange]);
+
+  useEffect(() => {
+    if (rawLeads) {
+      setBoard(toBoard(effectiveLeads));
+    }
+  }, [effectiveLeads]);
 
   if (!board) return <Spinner />;
 
@@ -101,6 +130,17 @@ export default function Pipeline() {
         );
       });
       leadsApi.reorder(updates).catch(() => toast.error("Could not save pipeline"));
+
+      // Keep rawLeads in sync
+      setRawLeads((prevLeads) =>
+        prevLeads
+          ? prevLeads.map((item) => {
+              const u = updates.find((x) => x.id === item._id);
+              return u ? { ...item, status: u.status } : item;
+            })
+          : prevLeads
+      );
+
       return next;
     });
   };
@@ -113,13 +153,35 @@ export default function Pipeline() {
   const wonValue = wonLeads.reduce((s, l) => s + (l.value || 0), 0);
   const closedCount = wonLeads.length + (board.Lost?.length || 0);
   const winRate = closedCount > 0 ? Math.round((wonLeads.length / closedCount) * 100) : 0;
+  const hasDateFilter = Boolean(dateRange.preset !== "all" && (dateRange.start || dateRange.end));
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Pipeline"
         subtitle={`${allLeads.length} leads · ${currency(totalValue, { compact: true })} in play`}
-      />
+      >
+        <DateRangePicker value={dateRange} onChange={setDateRange} />
+      </PageHeader>
+
+      {/* Active timeline filter indicator */}
+      {hasDateFilter && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-3.5 py-2 text-xs text-sky-800 border border-sky-200 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-sky-600 animate-pulse" />
+            <span>
+              Timeline active: <strong>{dateRange.start || "Any"}</strong> to{" "}
+              <strong>{dateRange.end || "Any"}</strong> ({allLeads.length} deals in this view)
+            </span>
+          </div>
+          <button
+            onClick={() => setDateRange({ preset: "all", start: "", end: "" })}
+            className="font-semibold text-sky-700 hover:text-sky-900 underline"
+          >
+            Reset timeline
+          </button>
+        </div>
+      )}
 
       {/* KPI summary strip */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

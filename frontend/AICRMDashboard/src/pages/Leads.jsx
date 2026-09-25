@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Plus,
   Search,
@@ -23,6 +24,7 @@ import { EmptyState } from "../components/common/EmptyState";
 import { ConfirmDialog } from "../components/common/ConfirmDialog";
 import { LeadFormDialog } from "../components/leads/LeadFormDialog";
 import { LeadDrawer } from "../components/leads/LeadDrawer";
+import { DateRangePicker } from "../components/common/DateRangePicker";
 import {
   Card,
   Button,
@@ -45,12 +47,72 @@ import {
 import { cn } from "../lib/utils";
 import { toast } from "sonner";
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function getPeriodRange(period) {
+  if (!period) return null;
+  if (/^\d{4}$/.test(period)) {
+    return {
+      preset: "year-2026",
+      start: `${period}-01-01`,
+      end: `${period}-12-31`,
+    };
+  }
+  const idx = MONTH_NAMES.findIndex((m) =>
+    period.toLowerCase().startsWith(m.toLowerCase())
+  );
+  if (idx !== -1) {
+    const year = 2026;
+    const startMonth = String(idx + 1).padStart(2, "0");
+    const lastDay = new Date(year, idx + 1, 0).getDate();
+    return {
+      preset: idx === 8 ? "this-month" : idx === 7 ? "last-month" : "custom",
+      start: `${year}-${startMonth}-01`,
+      end: `${year}-${startMonth}-${String(lastDay).padStart(2, "0")}`,
+    };
+  }
+  return null;
+}
+
 export default function Leads() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState(null);
   const [filters, setFilters] = useState({ status: "", priority: "", source: "", search: "" });
   const [sort, setSort] = useState({ key: "updatedAt", dir: "desc" });
   const [selected, setSelected] = useState(() => new Set());
   const [view, setView] = useState("table"); // "table" | "grid"
+
+  const [dateRange, setDateRange] = useState(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (from && to) {
+      return { preset: "custom", start: from, end: to };
+    }
+    const period = searchParams.get("period") || searchParams.get("month");
+    if (period) {
+      const parsed = getPeriodRange(period);
+      if (parsed) return parsed;
+    }
+    return { preset: "all", start: "", end: "" };
+  });
+
+  // Sync date range if search params in URL change
+  useEffect(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (from && to) {
+      setDateRange({ preset: "custom", start: from, end: to });
+      return;
+    }
+    const period = searchParams.get("period") || searchParams.get("month");
+    if (period) {
+      const parsed = getPeriodRange(period);
+      if (parsed) setDateRange(parsed);
+    }
+  }, [searchParams]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -66,18 +128,30 @@ export default function Leads() {
   };
   useEffect(load, []);
 
-  /* ── Derived data ─────────────────────────────────────────────────── */
-  // Counts per stage drive the quick-filter chips (independent of the active
-  // stage filter so the numbers stay stable).
+  /* ── Timeline date filtering ────────────────────────────────────────── */
+  const dateFilteredLeads = useMemo(() => {
+    if (!leads) return [];
+    if (!dateRange.start && !dateRange.end) return leads;
+
+    const start = dateRange.start ? new Date(dateRange.start + "T00:00:00").getTime() : 0;
+    const end = dateRange.end ? new Date(dateRange.end + "T23:59:59.999").getTime() : Infinity;
+
+    return leads.filter((l) => {
+      const d = new Date(l.createdAt || l.updatedAt).getTime();
+      return !Number.isNaN(d) && d >= start && d <= end;
+    });
+  }, [leads, dateRange]);
+
+  /* ── Derived data (calculated over timeline-filtered leads) ─────────── */
   const stageCounts = useMemo(() => {
-    const c = { All: leads?.length || 0 };
+    const c = { All: dateFilteredLeads.length };
     LEAD_STAGES.forEach((s) => (c[s] = 0));
-    (leads || []).forEach((l) => (c[l.status] = (c[l.status] || 0) + 1));
+    dateFilteredLeads.forEach((l) => (c[l.status] = (c[l.status] || 0) + 1));
     return c;
-  }, [leads]);
+  }, [dateFilteredLeads]);
 
   const kpis = useMemo(() => {
-    const list = leads || [];
+    const list = dateFilteredLeads;
     const open = list.filter((l) => l.status !== "Won" && l.status !== "Lost");
     const openValue = open.reduce((s, l) => s + (l.value || 0), 0);
     const wonValue = list
@@ -90,11 +164,10 @@ export default function Leads() {
       wonValue,
       avg: list.length ? Math.round(total / list.length) : 0,
     };
-  }, [leads]);
+  }, [dateFilteredLeads]);
 
   const filtered = useMemo(() => {
-    if (!leads) return [];
-    return leads.filter((l) => {
+    return dateFilteredLeads.filter((l) => {
       if (filters.status && l.status !== filters.status) return false;
       if (filters.priority && l.priority !== filters.priority) return false;
       if (filters.source && l.source !== filters.source) return false;
@@ -108,7 +181,7 @@ export default function Leads() {
       }
       return true;
     });
-  }, [leads, filters]);
+  }, [dateFilteredLeads, filters]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -132,8 +205,9 @@ export default function Leads() {
     return arr;
   }, [filtered, sort]);
 
+  const hasDateFilter = Boolean(dateRange.preset !== "all" && (dateRange.start || dateRange.end));
   const filtersActive =
-    filters.status || filters.priority || filters.source || filters.search;
+    filters.status || filters.priority || filters.source || filters.search || hasDateFilter;
 
   /* ── Handlers ─────────────────────────────────────────────────────── */
   const toggleSort = (key) =>
@@ -281,7 +355,19 @@ export default function Leads() {
               className="h-10 w-full rounded-xl border border-line bg-surface pl-10 pr-4 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2 lg:flex">
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker
+              value={dateRange}
+              onChange={(range) => {
+                setDateRange(range);
+                if (range.start && range.end) {
+                  setSearchParams({ from: range.start, to: range.end });
+                } else {
+                  setSearchParams({});
+                }
+              }}
+              align="right"
+            />
             <Filter
               value={filters.priority}
               onChange={(v) => setFilters({ ...filters, priority: v })}
@@ -296,6 +382,28 @@ export default function Leads() {
             />
           </div>
         </div>
+
+        {/* Timeline active banner */}
+        {hasDateFilter && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-sky-50 px-3.5 py-2 text-xs text-sky-800 border border-sky-200 animate-fade-in">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-sky-600 animate-pulse" />
+              <span>
+                Timeline active: <strong>{dateRange.start || "Any"}</strong> to{" "}
+                <strong>{dateRange.end || "Any"}</strong> ({dateFilteredLeads.length} leads in this range)
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setDateRange({ preset: "all", start: "", end: "" });
+                setSearchParams({});
+              }}
+              className="font-semibold text-sky-700 hover:text-sky-900 underline"
+            >
+              Reset timeline
+            </button>
+          </div>
+        )}
 
         {/* Stage quick-filter chips */}
         <div className="flex flex-wrap items-center gap-2">
@@ -319,7 +427,11 @@ export default function Leads() {
           <div className="ml-auto flex items-center gap-3">
             {filtersActive && (
               <button
-                onClick={() => setFilters({ status: "", priority: "", source: "", search: "" })}
+                onClick={() => {
+                  setFilters({ status: "", priority: "", source: "", search: "" });
+                  setDateRange({ preset: "all", start: "", end: "" });
+                  setSearchParams({});
+                }}
                 className="inline-flex items-center gap-1 text-sm font-medium text-ink-soft transition hover:text-ink"
               >
                 <X className="h-3.5 w-3.5" /> Clear

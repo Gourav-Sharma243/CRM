@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Search,
@@ -17,16 +17,22 @@ import {
   CheckCircle2,
   DollarSign,
   TrendingUp,
+  ArrowRight,
 } from "lucide-react";
 import {
   Avatar,
+  Badge,
   IconButton,
   Dropdown,
   DropdownItem,
   DropdownLabel,
   DropdownSeparator,
+  Spinner,
 } from "../ui";
 import { useAuth } from "../../context/AuthContext";
+import { leadsApi } from "../../lib/services";
+import { currency } from "../../lib/format";
+import { STAGE_STYLES } from "../../lib/constants";
 import { cn } from "../../lib/utils";
 
 const LINKS = [
@@ -88,9 +94,25 @@ export function TopNav({ onMenuClick }) {
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [realLeads, setRealLeads] = useState([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
   const notifRef = useRef(null);
 
   const unreadCount = notifications.filter((n) => n.unread).length;
+
+  // Fetch real leads whenever search palette is opened
+  useEffect(() => {
+    if (searchOpen && realLeads.length === 0) {
+      setLoadingLeads(true);
+      leadsApi
+        .list()
+        .then((res) => {
+          setRealLeads(res.leads || []);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingLeads(false));
+    }
+  }, [searchOpen, realLeads.length]);
 
   // Close notifications on outside click
   useEffect(() => {
@@ -123,18 +145,35 @@ export function TopNav({ onMenuClick }) {
     setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
   };
 
-  const QUICK_SEARCH_ITEMS = [
-    { title: "Wayne Enterprises", sub: "$140,000 · Won deal", type: "Lead", to: "/leads" },
-    { title: "Globex Corporation", sub: "$85,000 · Won deal", type: "Lead", to: "/leads" },
-    { title: "Sarah Connor", sub: "Acme Cloud · VP Engineering", type: "Contact", to: "/contacts" },
-    { title: "Send finalized SLA to Globex", sub: "High Priority Task", type: "Task", to: "/tasks" },
-    { title: "Pipeline Kanban Board", sub: "View active deals", type: "View", to: "/pipeline" },
-  ].filter((item) =>
-    searchQuery
-      ? item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.sub.toLowerCase().includes(searchQuery.toLowerCase())
-      : true
-  );
+  // Filter real leads dynamically
+  const filteredLeads = useMemo(() => {
+    if (!realLeads || realLeads.length === 0) return [];
+    if (!searchQuery.trim()) return realLeads.slice(0, 8);
+    const q = searchQuery.toLowerCase().trim();
+    return realLeads.filter(
+      (l) =>
+        l.name?.toLowerCase().includes(q) ||
+        l.company?.toLowerCase().includes(q) ||
+        l.email?.toLowerCase().includes(q) ||
+        l.phone?.toLowerCase().includes(q) ||
+        l.status?.toLowerCase().includes(q)
+    );
+  }, [realLeads, searchQuery]);
+
+  const NAV_SHORTCUTS = [
+    { title: "Dashboard", sub: "Analytics, KPIs & pipeline overview", to: "/", type: "Page" },
+    { title: "Pipeline Board", sub: "Drag & drop Kanban deals", to: "/pipeline", type: "Page" },
+    { title: "Contacts Directory", sub: "All business & client directory", to: "/contacts", type: "Page" },
+    { title: "Follow-up Tasks", sub: "High priority follow-ups and todos", to: "/tasks", type: "Page" },
+  ];
+
+  const filteredNav = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return NAV_SHORTCUTS.filter(
+      (n) => n.title.toLowerCase().includes(q) || n.sub.toLowerCase().includes(q)
+    );
+  }, [searchQuery]);
 
   return (
     <>
@@ -347,29 +386,97 @@ export function TopNav({ onMenuClick }) {
               </button>
             </div>
 
-            <div className="mt-3 space-y-1 max-h-72 overflow-y-auto">
-              {QUICK_SEARCH_ITEMS.length === 0 ? (
-                <p className="py-6 text-center text-xs text-ink-soft">No matching items found.</p>
+            <div className="mt-3 space-y-1 max-h-80 overflow-y-auto pr-1">
+              {loadingLeads ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2">
+                  <Spinner />
+                  <p className="text-xs text-ink-soft">Loading leads...</p>
+                </div>
+              ) : filteredLeads.length === 0 && filteredNav.length === 0 ? (
+                <p className="py-8 text-center text-xs text-ink-soft">
+                  No leads found matching "{searchQuery}".
+                </p>
               ) : (
-                QUICK_SEARCH_ITEMS.map((item, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => {
-                      setSearchOpen(false);
-                      navigate(item.to);
-                    }}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition hover:bg-surface-muted cursor-pointer"
-                  >
+                <>
+                  {filteredLeads.length > 0 && (
                     <div>
-                      <p className="font-semibold text-ink">{item.title}</p>
-                      <p className="text-[11px] text-ink-soft">{item.sub}</p>
+                      <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-soft">
+                        <span>Leads ({filteredLeads.length})</span>
+                        <span className="text-[10px] font-normal normal-case">Click to view full lead details</span>
+                      </div>
+                      <div className="space-y-1">
+                        {filteredLeads.map((lead) => {
+                          const stageStyle = STAGE_STYLES[lead.status] || STAGE_STYLES.New;
+                          return (
+                            <button
+                              key={lead._id || lead.id}
+                              type="button"
+                              onClick={() => {
+                                setSearchOpen(false);
+                                setSearchQuery("");
+                                navigate(`/leads?leadId=${lead._id || lead.id}`);
+                              }}
+                              className="group flex w-full items-center justify-between rounded-xl p-2.5 text-left transition hover:bg-surface-muted cursor-pointer"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <Avatar name={lead.name} size="sm" />
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-semibold text-xs text-ink truncate group-hover:text-brand-700">
+                                      {lead.name}
+                                    </p>
+                                    {lead.company && (
+                                      <span className="text-[11px] text-ink-soft truncate">
+                                        · {lead.company}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-ink-soft truncate">
+                                    {lead.email || lead.phone || "No contact info"} · <span className="font-semibold text-ink">{currency(lead.value)}</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge className={stageStyle.badge} dot={stageStyle.dot}>
+                                  {lead.status}
+                                </Badge>
+                                <ArrowRight className="h-3.5 w-3.5 text-ink-soft opacity-0 transition group-hover:opacity-100 group-hover:translate-x-0.5" />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <span className="rounded-md bg-canvas px-2 py-0.5 text-[10px] font-semibold text-ink-soft border border-line">
-                      {item.type}
-                    </span>
-                  </button>
-                ))
+                  )}
+
+                  {filteredNav.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-line">
+                      <p className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-ink-soft">
+                        Quick Views
+                      </p>
+                      {filteredNav.map((item, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setSearchOpen(false);
+                            setSearchQuery("");
+                            navigate(item.to);
+                          }}
+                          className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition hover:bg-surface-muted cursor-pointer"
+                        >
+                          <div>
+                            <p className="font-semibold text-ink">{item.title}</p>
+                            <p className="text-[11px] text-ink-soft">{item.sub}</p>
+                          </div>
+                          <span className="rounded-md bg-canvas px-2 py-0.5 text-[10px] font-semibold text-ink-soft border border-line">
+                            {item.type}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

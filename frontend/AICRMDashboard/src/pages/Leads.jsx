@@ -128,6 +128,29 @@ export default function Leads() {
   };
   useEffect(load, []);
 
+  // Automatically open lead details drawer if a leadId or id is passed in URL
+  useEffect(() => {
+    const targetLeadId = searchParams.get("leadId") || searchParams.get("id");
+    if (targetLeadId && leads && leads.length > 0) {
+      const match = leads.find(
+        (l) => String(l._id) === String(targetLeadId) || String(l.id) === String(targetLeadId)
+      );
+      if (match) {
+        setDrawerLead(match);
+      }
+    }
+  }, [searchParams, leads]);
+
+  const handleDrawerClose = () => {
+    setDrawerLead(null);
+    if (searchParams.get("leadId") || searchParams.get("id")) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("leadId");
+      nextParams.delete("id");
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
+
   /* ── Timeline date filtering ────────────────────────────────────────── */
   const dateFilteredLeads = useMemo(() => {
     if (!leads) return [];
@@ -611,7 +634,7 @@ export default function Leads() {
       />
       <LeadDrawer
         open={Boolean(drawerLead)}
-        onClose={() => setDrawerLead(null)}
+        onClose={handleDrawerClose}
         lead={drawerLead}
         onEdit={openEdit}
         onDelete={setToDelete}

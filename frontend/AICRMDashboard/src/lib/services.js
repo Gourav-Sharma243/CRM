@@ -3,7 +3,7 @@ export const authApi = {
   login: (data) => api.post("/auth/login", data),
   register: (data) => api.post("/auth/register", data),
   me: () => api.get("/auth/me"),
-  updateProfile: (data) => api.put("/auth/profile", data),
+  updateProfile: (data) => api.put("/auth/me", data),
 };
 export const leadsApi = {
   list: (params) => api.get("/leads", { params }),

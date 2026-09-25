@@ -1,7 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend/AICRMDashboard && npm install && npm run build",
-  "outputDirectory": "frontend/AICRMDashboard/dist",
   "rewrites": [
     {
       "source": "/api/(.*)",

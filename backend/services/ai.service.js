@@ -12,7 +12,7 @@ export const getClient = () => {
     return client;
 };
 
-const MODEL = () => process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const MODEL = () => process.env.GEMINI_MODEL || "gemini-3.8-flash";
 export const isAIConfigued = () => Boolean(process.env.GEMINI_API_KEY);
 
 const generateJSON = async (prompt, schema) => {

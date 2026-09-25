@@ -246,7 +246,7 @@ function SortableCard({ lead }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(isDragging && "opacity-40")}
+      className={cn(isDragging && "opacity-40", "w-full min-w-0")}
     >
       <LeadCard lead={lead} dragHandle={{ attributes, listeners }} />
     </div>
@@ -277,19 +277,21 @@ function LeadCard({ lead, dragHandle, overlay }) {
   return (
     <div
       className={cn(
-        "group rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60",
+        "group flex flex-col justify-between rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60 h-auto w-full min-w-0",
         overlay ? "shadow-[var(--shadow-pop)] rotate-2" : "hover:shadow-[var(--shadow-card)]"
       )}
     >
       {/* Name / company row + drag handle */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <Avatar name={lead.name} size="sm" />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-ink">{lead.name}</p>
-            <p className="flex items-center gap-1 truncate text-xs text-ink-soft">
-              <Building2 className="h-3 w-3 shrink-0" />
-              {lead.company || "—"}
+      <div className="flex items-start justify-between gap-2.5 w-full">
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          <Avatar name={lead.name} size="sm" className="mt-0.5 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-semibold text-ink leading-snug break-words">
+              {lead.name}
+            </h4>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-ink-soft truncate">
+              <Building2 className="h-3 w-3 shrink-0 text-ink-soft/70" />
+              <span className="truncate">{lead.company || "—"}</span>
             </p>
           </div>
         </div>
@@ -297,7 +299,7 @@ function LeadCard({ lead, dragHandle, overlay }) {
           <button
             {...dragHandle.attributes}
             {...dragHandle.listeners}
-            className="cursor-grab text-ink-soft/50 transition hover:text-ink-soft active:cursor-grabbing"
+            className="cursor-grab text-ink-soft/40 transition hover:text-ink-soft active:cursor-grabbing shrink-0 mt-0.5 p-0.5 -mr-0.5 rounded hover:bg-surface-muted"
             aria-label="Drag"
           >
             <GripVertical className="h-4 w-4" />
@@ -306,9 +308,11 @@ function LeadCard({ lead, dragHandle, overlay }) {
       </div>
 
       {/* Value + priority */}
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3.5 flex items-center justify-between pt-1 border-t border-line/40">
         <span className="text-sm font-bold text-ink">{currency(lead.value)}</span>
-        <Badge className={PRIORITY_STYLES[lead.priority]}>{lead.priority}</Badge>
+        <Badge className={cn(PRIORITY_STYLES[lead.priority], "shrink-0 font-medium")}>
+          {lead.priority}
+        </Badge>
       </div>
 
       {/* AI suggest button — appears on hover, hidden in DragOverlay */}

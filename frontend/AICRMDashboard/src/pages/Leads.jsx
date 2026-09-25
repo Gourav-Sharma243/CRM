@@ -562,12 +562,13 @@ function LeadGridCard({ lead, selected, onToggle, onOpen, onEdit, onDelete }) {
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <Avatar name={lead.name} size="md" />
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-ink">{lead.name}</p>
-            <p className="flex items-center gap-1 truncate text-xs text-ink-soft">
-              <Building2 className="h-3 w-3 shrink-0" /> {lead.company || lead.email || "—"}
+        <div className="flex min-w-0 items-start gap-3 flex-1">
+          <Avatar name={lead.name} size="md" className="shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h4 className="font-semibold text-ink leading-snug break-words">{lead.name}</h4>
+            <p className="flex items-center gap-1.5 text-xs text-ink-soft mt-1 truncate">
+              <Building2 className="h-3.5 w-3.5 shrink-0 text-ink-soft/70" />
+              <span className="truncate">{lead.company || lead.email || "—"}</span>
             </p>
           </div>
         </div>

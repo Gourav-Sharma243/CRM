@@ -40,7 +40,6 @@ const LINKS = [
   { to: "/leads", label: "Leads" },
   { to: "/pipeline", label: "Pipeline" },
   { to: "/contacts", label: "Contacts" },
-  { to: "/notes", label: "Notes" },
   { to: "/tasks", label: "Follow-ups" },
 ];
 
@@ -163,10 +162,8 @@ export function TopNav({ onMenuClick }) {
 
   const NAV_SHORTCUTS = [
     { title: "Dashboard", sub: "Analytics, KPIs & pipeline overview", to: "/", type: "Page" },
-    { title: "Leads", sub: "Manage, filter & inspect sales leads", to: "/leads", type: "Page" },
     { title: "Pipeline Board", sub: "Drag & drop Kanban deals", to: "/pipeline", type: "Page" },
     { title: "Contacts Directory", sub: "All business & client directory", to: "/contacts", type: "Page" },
-    { title: "Notes", sub: "Sales notes, memos & pinned deal logs", to: "/notes", type: "Page" },
     { title: "Follow-up Tasks", sub: "High priority follow-ups and todos", to: "/tasks", type: "Page" },
   ];
 

@@ -82,72 +82,81 @@ function NoteCard({ note, onEdit, onDelete, onTogglePin }) {
 
   return (
     <div
+      onClick={() => onEdit(note)}
       className={cn(
-        "break-inside-avoid relative flex flex-col gap-3 overflow-hidden rounded-2xl bg-surface p-5",
-        "border border-line shadow-(--shadow-card) transition hover:shadow-(--shadow-pop)",
-        note.pinned && "ring-1 ring-brand-200"
+        "group relative flex flex-col justify-between gap-3 rounded-2xl bg-surface p-5 cursor-pointer",
+        "border border-line shadow-xs transition hover:shadow-md hover:border-brand-300",
+        note.pinned && "ring-1 ring-brand-300 bg-brand-50/15"
       )}
     >
       {/* Pinned accent strip along the top */}
       {note.pinned && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-linear-to-r from-brand-400 to-brand-600" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-brand-400 to-brand-600" />
       )}
 
-      {/* Pinned icon badge */}
-      {note.pinned && (
-        <span className="absolute right-4 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-brand-500">
-          <Pin className="h-3.5 w-3.5" aria-label="Pinned" />
-        </span>
-      )}
+      {/* Header: Pinned tag + Direct Action Buttons */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {note.pinned ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700 border border-brand-200">
+              <Pin className="h-3 w-3 fill-brand-600" /> Pinned
+            </span>
+          ) : (
+            <span className="text-xs font-medium text-ink-soft">Note</span>
+          )}
+        </div>
+
+        {/* Visible action buttons */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-1"
+        >
+          <button
+            type="button"
+            onClick={() => onTogglePin(note)}
+            title={note.pinned ? "Unpin note" : "Pin note to top"}
+            className={cn(
+              "rounded-lg p-1.5 text-ink-soft transition hover:bg-surface-muted hover:text-ink cursor-pointer",
+              note.pinned && "text-brand-600 bg-brand-50 hover:bg-brand-100"
+            )}
+          >
+            {note.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => onEdit(note)}
+            title="Edit note"
+            className="rounded-lg p-1.5 text-ink-soft transition hover:bg-surface-muted hover:text-brand-600 cursor-pointer"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(note)}
+            title="Delete note"
+            className="rounded-lg p-1.5 text-ink-soft transition hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
 
       {/* Note content */}
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink pr-6">
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink min-h-[48px]">
         {note.content}
       </p>
 
-      {/* Footer: linked chip + timestamp + actions */}
-      <div className="flex items-center justify-between gap-2 pt-1">
+      {/* Footer: linked chip + timestamp */}
+      <div className="flex items-center justify-between gap-2 pt-2 border-t border-line/40">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {entity && (
-            <Badge className="inline-flex items-center gap-1 bg-brand-50 text-brand-700 border-brand-100 text-xs font-medium max-w-[160px] truncate">
+            <Badge className="inline-flex items-center gap-1 bg-brand-50 text-brand-700 border-brand-100 text-xs font-medium max-w-[170px] truncate">
               <Link2 className="h-3 w-3 shrink-0" />
               <span className="truncate">{entity.name}</span>
             </Badge>
           )}
-          <span className="text-xs text-ink-soft">{relative(note.createdAt)}</span>
         </div>
-
-        {/* Overflow menu */}
-        <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-          <Dropdown
-            trigger={
-              <button
-                className="rounded-lg p-1.5 text-ink-soft transition hover:bg-surface-muted"
-                aria-label="Note options"
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
-            }
-          >
-            <DropdownItem onClick={() => onTogglePin(note)}>
-              {note.pinned ? (
-                <>
-                  <PinOff className="h-4 w-4" /> Unpin
-                </>
-              ) : (
-                <>
-                  <Pin className="h-4 w-4" /> Pin
-                </>
-              )}
-            </DropdownItem>
-            <DropdownItem onClick={() => onEdit(note)}>
-              <Pencil className="h-4 w-4" /> Edit
-            </DropdownItem>
-            <DropdownItem danger onClick={() => onDelete(note)}>
-              <Trash2 className="h-4 w-4" /> Delete
-            </DropdownItem>
-          </Dropdown>
-        </div>
+        <span className="text-xs text-ink-soft shrink-0">{relative(note.createdAt)}</span>
       </div>
     </div>
   );
@@ -470,8 +479,8 @@ export default function Notes() {
           }
         />
       ) : (
-        /* Masonry via CSS columns */
-        <div className="columns-1 sm:columns-2 xl:columns-3 gap-4 *:mb-4">
+        /* Responsive Notes Grid */
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((note) => (
             <NoteCard
               key={note._id}

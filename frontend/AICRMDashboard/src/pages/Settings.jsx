@@ -51,6 +51,8 @@ function ProfileCard({ user, updateUser }) {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm();
 
@@ -63,6 +65,8 @@ function ProfileCard({ user, updateUser }) {
       avatar: user.avatar || "",
     });
   }, [user, reset]);
+
+  const avatarValue = watch("avatar");
 
   const onSubmit = async (form) => {
     try {
@@ -81,19 +85,37 @@ function ProfileCard({ user, updateUser }) {
           <SectionIcon icon={User} />
           <div>
             <CardTitle>Profile</CardTitle>
-            <CardDescription>Update your personal information.</CardDescription>
+            <CardDescription>Update your personal information and avatar.</CardDescription>
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="pt-5">
         {/* Avatar preview row */}
-        <div className="mb-6 flex items-center gap-4 rounded-2xl border border-line bg-surface-muted px-4 py-3">
-          <Avatar name={user?.name} src={user?.avatar} size="lg" />
-          <div>
-            <p className="text-sm font-semibold text-ink">{user?.name}</p>
-            <p className="text-xs text-ink-soft">{user?.email}</p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-line bg-surface-muted px-4 py-3.5">
+          <div className="flex items-center gap-4">
+            <Avatar name={user?.name} src={avatarValue !== undefined ? avatarValue : user?.avatar} size="lg" />
+            <div>
+              <p className="text-sm font-semibold text-ink">{user?.name}</p>
+              <p className="text-xs text-ink-soft">{user?.email}</p>
+              <p className="text-[11px] text-ink-soft/80 mt-0.5">
+                {avatarValue ? "Custom photo preview active" : "Using colored name initials"}
+              </p>
+            </div>
           </div>
+          {(avatarValue || user?.avatar) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setValue("avatar", "", { shouldDirty: true });
+                toast.info("Photo cleared — remember to click 'Save changes'.");
+              }}
+            >
+              Remove photo (use initials)
+            </Button>
+          )}
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -130,14 +152,60 @@ function ProfileCard({ user, updateUser }) {
             </Field>
 
             <Field
-              label="Avatar URL"
+              label="Avatar Photo URL"
               error={errors.avatar?.message}
               className="sm:col-span-2"
             >
-              <Input
-                placeholder="https://example.com/photo.jpg"
-                {...register("avatar")}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="https://example.com/photo.jpg (or leave blank for initials)"
+                  {...register("avatar")}
+                />
+                {avatarValue && (
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="sm"
+                    onClick={() => setValue("avatar", "", { shouldDirty: true })}
+                    className="shrink-0"
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Paste any direct image link (e.g. <span className="font-mono text-brand-600">https://github.com/username.png</span>). Leave blank to use your name initials.
+              </p>
+
+              {/* Quick Presets */}
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-ink-soft">Presets:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+                    "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+                    "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
+                    "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80",
+                  ].map((url, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setValue("avatar", url, { shouldDirty: true })}
+                      className="h-7 w-7 rounded-full overflow-hidden border border-line hover:border-brand-500 hover:ring-2 hover:ring-brand-200 transition cursor-pointer"
+                      title="Choose avatar preset"
+                    >
+                      <img src={url} alt="Preset" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setValue("avatar", "", { shouldDirty: true })}
+                    className="h-7 rounded-full border border-line px-2.5 text-[11px] font-medium text-ink-soft hover:bg-surface-muted hover:text-ink transition cursor-pointer"
+                  >
+                    Use Initials
+                  </button>
+                </div>
+              </div>
             </Field>
           </div>
 

@@ -5,19 +5,22 @@ import { Toaster } from "sonner";
 import "./index.css";
 import App from "./App.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-        {/* Global toast notifications */}
-        <Toaster
-          position="top-right"
-          richColors
-          toastOptions={{ style: { borderRadius: "14px" } }}
-        />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <App />
+          {/* Global toast notifications */}
+          <Toaster
+            position="top-right"
+            richColors
+            toastOptions={{ style: { borderRadius: "14px" } }}
+          />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>
 );

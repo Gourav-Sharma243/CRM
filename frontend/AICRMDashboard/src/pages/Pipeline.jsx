@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   DndContext,
@@ -29,10 +29,14 @@ import { PIPELINE_STAGES, STAGE_STYLES, PRIORITY_STYLES } from "../lib/constants
 import { cn } from "../lib/utils";
 import { toast } from "sonner";
 
-/* Group a flat lead list into { stage: Lead[] } buckets. */
+/* Group a flat lead list into { stage: Lead[] } buckets safely. */
 const toBoard = (leads) => {
   const board = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, []]));
-  for (const l of (leads || [])) (board[l.status] || board.New).push(l);
+  for (const l of (leads || [])) {
+    if (!l) continue;
+    const stage = PIPELINE_STAGES.includes(l.status) ? l.status : "New";
+    board[stage].push(l);
+  }
   return board;
 };
 
@@ -49,18 +53,25 @@ export default function Pipeline() {
   const [toDelete, setToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Require moving 8px before drag activates. This prevents accidental drag
+  // and allows standard clicking anywhere on the card to open lead details.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
   );
 
-  const reloadLeads = () => {
+  const reloadLeads = useCallback(() => {
     leadsApi
       .list()
       .then((res) => {
-        setRawLeads(res.leads);
-        setBoard(toBoard(res.leads));
+        const list = res?.leads || [];
+        setRawLeads(list);
+        setBoard(toBoard(list));
         if (drawerLead) {
-          const updated = res.leads.find((l) => l._id === drawerLead._id);
+          const updated = list.find((l) => l?._id === drawerLead._id);
           if (updated) setDrawerLead(updated);
         }
       })
@@ -68,7 +79,7 @@ export default function Pipeline() {
         setRawLeads([]);
         setBoard(toBoard([]));
       });
-  };
+  }, [drawerLead]);
 
   useEffect(() => {
     reloadLeads();
@@ -78,7 +89,7 @@ export default function Pipeline() {
   useEffect(() => {
     const leadId = searchParams.get("leadId");
     if (leadId && rawLeads) {
-      const match = rawLeads.find((l) => l._id === leadId);
+      const match = rawLeads.find((l) => l?._id === leadId);
       if (match) setDrawerLead(match);
     }
   }, [searchParams, rawLeads]);
@@ -115,7 +126,7 @@ export default function Pipeline() {
       }
       reloadLeads();
     } catch (err) {
-      toast.error(err.message || "Failed to delete lead");
+      toast.error(err?.message || "Failed to delete lead");
     } finally {
       setDeleting(false);
     }
@@ -130,6 +141,7 @@ export default function Pipeline() {
     const end = dateRange.end ? new Date(dateRange.end + "T23:59:59.999").getTime() : Infinity;
 
     return rawLeads.filter((l) => {
+      if (!l) return false;
       const d = new Date(l.createdAt || l.updatedAt).getTime();
       return !Number.isNaN(d) && d >= start && d <= end;
     });
@@ -143,80 +155,105 @@ export default function Pipeline() {
 
   if (!board) return <Spinner />;
 
-  const findContainer = (id) => {
-    if (id in board) return id;
-    return PIPELINE_STAGES.find((s) => board[s].some((l) => l._id === id));
+  // Safely find which container an ID belongs to (either a stage name or a lead's _id)
+  const findContainer = (id, b = board) => {
+    if (!id || !b) return null;
+    if (id in b) return id;
+    return PIPELINE_STAGES.find((s) => (b[s] || []).some((l) => l && l._id === id)) || null;
   };
 
   const activeLead = activeId
-    ? Object.values(board).flat().find((l) => l._id === activeId)
+    ? Object.values(board || {}).flat().find((l) => l && l._id === activeId)
     : null;
 
-  /* Move cards between columns live as the user drags over them. */
-  const handleDragOver = ({ active, over }) => {
-    if (!over) return;
-    const from = findContainer(active.id);
-    const to = findContainer(over.id);
-    if (!from || !to || from === to) return;
-
-    setBoard((prev) => {
-      const fromItems = [...prev[from]];
-      const toItems = [...prev[to]];
-      const idx = fromItems.findIndex((l) => l._id === active.id);
-      if (idx === -1) return prev;
-      const [moved] = fromItems.splice(idx, 1);
-      moved.status = to;
-      // Insert near the hovered card (or append if hovering the column).
-      const overIdx = toItems.findIndex((l) => l._id === over.id);
-      toItems.splice(overIdx === -1 ? toItems.length : overIdx, 0, moved);
-      return { ...prev, [from]: fromItems, [to]: toItems };
+  /* Persist ordering and stage updates to the backend */
+  const persistBoard = (nextBoard) => {
+    const updates = [];
+    PIPELINE_STAGES.forEach((stage) => {
+      (nextBoard[stage] || []).forEach((l, order) => {
+        if (l && l._id) {
+          updates.push({ id: l._id, status: stage, order });
+        }
+      });
     });
+
+    leadsApi.reorder(updates).catch(() => toast.error("Could not save pipeline"));
+
+    // Sync rawLeads in memory
+    setRawLeads((prevLeads) =>
+      prevLeads
+        ? prevLeads.map((item) => {
+            const u = updates.find((x) => x.id === item?._id);
+            return u ? { ...item, status: u.status } : item;
+          })
+        : prevLeads
+    );
   };
 
-  /* Persist the final ordering + stage to the backend. */
+  /* Atomically resolve drops when drag completes */
   const handleDragEnd = ({ active, over }) => {
     setActiveId(null);
-    if (!over) return;
-    const container = findContainer(over.id);
-    if (!container) return;
+    if (!over || !active) return;
+    if (active.id === over.id) return;
 
     setBoard((prev) => {
-      const items = [...prev[container]];
-      const oldIdx = items.findIndex((l) => l._id === active.id);
-      const newIdx = items.findIndex((l) => l._id === over.id);
-      const reordered =
-        oldIdx !== -1 && newIdx !== -1 ? arrayMove(items, oldIdx, newIdx) : items;
-      const next = { ...prev, [container]: reordered };
+      if (!prev) return prev;
+      const fromStage = findContainer(active.id, prev);
+      const toStage = findContainer(over.id, prev);
 
-      // Build the persistence payload across all affected columns.
-      const updates = [];
-      PIPELINE_STAGES.forEach((stage) => {
-        next[stage].forEach((l, order) =>
-          updates.push({ id: l._id, status: stage, order })
+      if (!fromStage || !toStage) return prev;
+
+      let next;
+
+      // Reordering within the same column
+      if (fromStage === toStage) {
+        const items = [...(prev[fromStage] || [])];
+        const oldIdx = items.findIndex((l) => l && l._id === active.id);
+        const newIdx = items.findIndex((l) => l && l._id === over.id);
+
+        if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return prev;
+
+        const reordered = arrayMove(items, oldIdx, newIdx);
+        next = { ...prev, [fromStage]: reordered };
+      } else {
+        // Moving between different stages
+        const sourceItems = (prev[fromStage] || []).filter(
+          (l) => l && l._id !== active.id
         );
-      });
-      leadsApi.reorder(updates).catch(() => toast.error("Could not save pipeline"));
+        const draggedLead = (prev[fromStage] || []).find(
+          (l) => l && l._id === active.id
+        );
 
-      // Keep rawLeads in sync
-      setRawLeads((prevLeads) =>
-        prevLeads
-          ? prevLeads.map((item) => {
-              const u = updates.find((x) => x.id === item._id);
-              return u ? { ...item, status: u.status } : item;
-            })
-          : prevLeads
-      );
+        if (!draggedLead) return prev;
 
+        const updatedLead = { ...draggedLead, status: toStage };
+        const destItems = (prev[toStage] || []).filter(
+          (l) => l && l._id !== active.id
+        );
+
+        const overIdx = destItems.findIndex((l) => l && l._id === over.id);
+        const insertIdx = overIdx >= 0 ? overIdx : destItems.length;
+
+        destItems.splice(insertIdx, 0, updatedLead);
+
+        next = {
+          ...prev,
+          [fromStage]: sourceItems,
+          [toStage]: destItems,
+        };
+      }
+
+      persistBoard(next);
       return next;
     });
   };
 
   /* ── KPI computations ─────────────────────────────────────────────── */
-  const allLeads = Object.values(board).flat();
-  const totalValue = allLeads.reduce((s, l) => s + (l.value || 0), 0);
-  const openDeals = allLeads.filter((l) => l.status !== "Won" && l.status !== "Lost");
-  const wonLeads = allLeads.filter((l) => l.status === "Won");
-  const wonValue = wonLeads.reduce((s, l) => s + (l.value || 0), 0);
+  const allLeads = Object.values(board || {}).flat().filter(Boolean);
+  const totalValue = allLeads.reduce((s, l) => s + (l?.value || 0), 0);
+  const openDeals = allLeads.filter((l) => l?.status !== "Won" && l?.status !== "Lost");
+  const wonLeads = allLeads.filter((l) => l?.status === "Won");
+  const wonValue = wonLeads.reduce((s, l) => s + (l?.value || 0), 0);
   const closedCount = wonLeads.length + (board.Lost?.length || 0);
   const winRate = closedCount > 0 ? Math.round((wonLeads.length / closedCount) * 100) : 0;
   const hasDateFilter = Boolean(dateRange.preset !== "all" && (dateRange.start || dateRange.end));
@@ -280,8 +317,7 @@ export default function Pipeline() {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
-        onDragStart={({ active }) => setActiveId(active.id)}
-        onDragOver={handleDragOver}
+        onDragStart={({ active }) => setActiveId(active?.id)}
         onDragEnd={handleDragEnd}
         onDragCancel={() => setActiveId(null)}
       >
@@ -290,13 +326,13 @@ export default function Pipeline() {
             <Column
               key={stage}
               stage={stage}
-              leads={board[stage]}
+              leads={board[stage] || []}
               onOpenLead={(lead) => setDrawerLead(lead)}
             />
           ))}
         </div>
 
-        <DragOverlay>
+        <DragOverlay dropAnimation={null}>
           {activeLead ? <LeadCard lead={activeLead} overlay /> : null}
         </DragOverlay>
       </DndContext>
@@ -348,10 +384,10 @@ function StatTile({ icon: Icon, label, value, tint }) {
 }
 
 /* ── Column ─────────────────────────────────────────────────────────── */
-function Column({ stage, leads, onOpenLead }) {
+function Column({ stage, leads = [], onOpenLead }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
-  const style = STAGE_STYLES[stage];
-  const value = leads.reduce((s, l) => s + (l.value || 0), 0);
+  const style = STAGE_STYLES[stage] || STAGE_STYLES.New;
+  const value = (leads || []).reduce((s, l) => s + (l?.value || 0), 0);
 
   return (
     <div className="flex w-80 shrink-0 flex-col">
@@ -377,19 +413,23 @@ function Column({ stage, leads, onOpenLead }) {
         ref={setNodeRef}
         className={cn(
           "flex min-h-[60vh] flex-1 flex-col gap-3 rounded-3xl border-2 border-dashed border-transparent bg-surface-muted/60 p-3 transition",
-          isOver && "border-brand-300 bg-brand-50/60"
+          isOver && "border-brand-400 bg-brand-50/80 shadow-inner"
         )}
       >
         <SortableContext
-          items={leads.map((l) => l._id)}
+          items={(leads || []).map((l) => l?._id).filter(Boolean)}
           strategy={verticalListSortingStrategy}
         >
-          {leads.map((lead) => (
-            <SortableCard key={lead._id} lead={lead} onOpen={onOpenLead} />
-          ))}
+          {(leads || []).map((lead) =>
+            lead ? (
+              <SortableCard key={lead._id} lead={lead} onOpen={onOpenLead} />
+            ) : null
+          )}
         </SortableContext>
         {leads.length === 0 && (
-          <p className="mt-6 text-center text-xs text-ink-soft">Drop leads here</p>
+          <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-line/60 py-10">
+            <p className="text-xs text-ink-soft">Drop deals here</p>
+          </div>
         )}
       </div>
     </div>
@@ -404,12 +444,16 @@ function SortableCard({ lead, onOpen }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn(isDragging && "opacity-40", "w-full min-w-0")}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={cn(isDragging && "opacity-30 pointer-events-none", "w-full min-w-0")}
+      {...attributes}
+      {...listeners}
     >
       <LeadCard
         lead={lead}
-        dragHandle={{ attributes, listeners }}
         onOpen={onOpen}
       />
     </div>
@@ -417,7 +461,7 @@ function SortableCard({ lead, onOpen }) {
 }
 
 /* ── Card UI ────────────────────────────────────────────────────────── */
-function LeadCard({ lead, dragHandle, overlay, onOpen }) {
+function LeadCard({ lead, overlay, onOpen }) {
   const [suggesting, setSuggesting] = useState(false);
 
   // AI: suggest the next best action / priority for this lead.
@@ -431,7 +475,7 @@ function LeadCard({ lead, dragHandle, overlay, onOpen }) {
         duration: 7000,
       });
     } catch (err) {
-      toast.error(err.message || "AI unavailable");
+      toast.error(err?.message || "AI unavailable");
     } finally {
       setSuggesting(false);
     }
@@ -441,13 +485,13 @@ function LeadCard({ lead, dragHandle, overlay, onOpen }) {
     <div
       onClick={() => onOpen && onOpen(lead)}
       className={cn(
-        "group flex flex-col justify-between rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60 h-auto w-full min-w-0 cursor-pointer select-none",
+        "group flex flex-col justify-between rounded-2xl bg-surface p-3.5 shadow-[var(--shadow-soft)] transition border border-line/60 h-auto w-full min-w-0 select-none cursor-grab active:cursor-grabbing",
         overlay
-          ? "shadow-[var(--shadow-pop)] rotate-2 cursor-grabbing"
+          ? "shadow-[var(--shadow-pop)] rotate-2 border-brand-300 ring-2 ring-brand-500/20"
           : "hover:shadow-[var(--shadow-card)] hover:border-brand-300"
       )}
     >
-      {/* Name / company row + drag handle */}
+      {/* Name / company row + visual drag indicator */}
       <div className="flex items-start justify-between gap-2.5 w-full">
         <div className="flex items-start gap-2.5 min-w-0 flex-1">
           <Avatar name={lead.name} size="sm" className="mt-0.5 shrink-0" />
@@ -461,17 +505,12 @@ function LeadCard({ lead, dragHandle, overlay, onOpen }) {
             </p>
           </div>
         </div>
-        {dragHandle && (
-          <button
-            {...dragHandle.attributes}
-            {...dragHandle.listeners}
-            onClick={(e) => e.stopPropagation()}
-            className="cursor-grab text-ink-soft/40 transition hover:text-ink-soft active:cursor-grabbing shrink-0 mt-0.5 p-0.5 -mr-0.5 rounded hover:bg-surface-muted"
-            aria-label="Drag"
-          >
-            <GripVertical className="h-4 w-4" />
-          </button>
-        )}
+        <div
+          className="text-ink-soft/40 transition group-hover:text-ink-soft shrink-0 mt-0.5 p-0.5 -mr-0.5"
+          aria-hidden="true"
+        >
+          <GripVertical className="h-4 w-4" />
+        </div>
       </div>
 
       {/* Value + priority */}
@@ -486,8 +525,9 @@ function LeadCard({ lead, dragHandle, overlay, onOpen }) {
       {!overlay && (
         <button
           onClick={suggest}
+          onPointerDown={(e) => e.stopPropagation()}
           disabled={suggesting}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand-50 py-1.5 text-xs font-medium text-brand-700 opacity-0 transition group-hover:opacity-100 hover:bg-brand-100 disabled:opacity-60"
+          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl bg-brand-50 py-1.5 text-xs font-medium text-brand-700 opacity-0 transition group-hover:opacity-100 hover:bg-brand-100 disabled:opacity-60 cursor-pointer"
         >
           <Sparkles className={cn("h-3.5 w-3.5", suggesting && "animate-pulse")} />
           {suggesting ? "Thinking…" : "AI suggest next step"}

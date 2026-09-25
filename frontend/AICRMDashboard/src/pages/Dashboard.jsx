@@ -67,23 +67,26 @@ export default function Dashboard() {
     tasksApi.list().then((res) => setTasks(res.tasks || [])).catch(() => {});
   }, []);
 
-  // Compute annual aggregation from leads
+  // Compute annual aggregation directly from real leads
   const annualTrend = useMemo(() => {
-    const yearCounts = { "2024": 0, "2025": 0, "2026": 0 };
+    const yearCounts = {};
+    const yearWon = {};
     leads.forEach((l) => {
       const yr = new Date(l.createdAt).getFullYear().toString();
-      if (yearCounts[yr] !== undefined) yearCounts[yr] += 1;
-      else yearCounts["2026"] = (yearCounts["2026"] || 0) + 1;
+      if (!Number.isNaN(Number(yr))) {
+        yearCounts[yr] = (yearCounts[yr] || 0) + 1;
+        if (l.status === "Won") {
+          yearWon[yr] = (yearWon[yr] || 0) + (l.value || 0);
+        }
+      }
     });
-    if (yearCounts["2024"] === 0 && yearCounts["2025"] === 0) {
-      yearCounts["2024"] = 4;
-      yearCounts["2025"] = 9;
-    }
-    return [
-      { month: "2024", leads: yearCounts["2024"], won: 180000 },
-      { month: "2025", leads: yearCounts["2025"], won: 520000 },
-      { month: "2026", leads: yearCounts["2026"] || 25, won: 1616000 },
-    ];
+
+    const years = ["2024", "2025", "2026"];
+    return years.map((yr) => ({
+      month: yr,
+      leads: yearCounts[yr] || 0,
+      won: yearWon[yr] || 0,
+    }));
   }, [leads]);
 
   const currentChartData = range === "annually" ? annualTrend : (data?.trend || []);
@@ -117,11 +120,16 @@ export default function Dashboard() {
     const wonCount = displayLeads.filter((l) => l.status === "Won").length;
     const lostCount = displayLeads.filter((l) => l.status === "Lost").length;
     const closed = wonCount + lostCount;
+    const displayLeadIds = new Set(displayLeads.map((l) => l._id?.toString()));
+    const matchingTasks = isFiltered
+      ? tasks.filter((t) => t.status !== "Completed" && t.relatedLead && displayLeadIds.has(t.relatedLead?._id?.toString() || t.relatedLead?.toString())).length
+      : tasks.filter((t) => t.status !== "Completed").length;
+
     return {
       pipelineValue: totalVal,
       revenueWon: wonVal,
       totalLeads: displayLeads.length,
-      openTasks: tasks.filter((t) => t.status !== "Completed").length,
+      openTasks: matchingTasks,
       conversionRate: closed > 0 ? Math.round((wonCount / closed) * 100) : 0,
     };
   }, [isFiltered, data, displayLeads, tasks]);

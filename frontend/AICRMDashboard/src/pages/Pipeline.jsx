@@ -17,11 +17,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Sparkles, GripVertical, Building2, TrendingUp, Layers, Target, DollarSign } from "lucide-react";
 import { PageHeader } from "../components/common/PageHeader";
+import { DateRangePicker } from "../components/common/DateRangePicker";
 import { Spinner, Avatar, Badge, Card } from "../components/ui";
 import { leadsApi, aiApi } from "../lib/services";
 import { currency } from "../lib/format";
 import { PIPELINE_STAGES, STAGE_STYLES, PRIORITY_STYLES } from "../lib/constants";
-import { DateRangePicker } from "../components/common/DateRangePicker";
 import { cn } from "../lib/utils";
 import { toast } from "sonner";
 

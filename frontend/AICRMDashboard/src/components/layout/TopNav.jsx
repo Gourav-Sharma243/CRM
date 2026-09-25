@@ -179,10 +179,8 @@ export function TopNav({ onMenuClick }) {
     <>
       <header className="flex items-center gap-3">
         {/* Brand */}
-        <div className="flex items-center gap-2.5 pr-2">
-          <div className="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-white shadow-sm">
-            <Sparkles className="h-5 w-5" />
-          </div>
+        <div className="flex items-center gap-2.5 pr-2 cursor-pointer" onClick={() => navigate("/")}>
+          <img src="/logo.png" alt="Nexus CRM" className="h-9 w-9 rounded-xl object-contain shadow-xs" />
           <span className="hidden font-display text-lg font-bold text-ink sm:block">
             Nexus CRM
           </span>

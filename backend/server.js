@@ -39,7 +39,7 @@ const healthHandler = (req, res) => {
     res.json({
         success: true,
         status: "ok",
-        service: "TTP CRM API",
+        service: "Nexus CRM API",
         db: mongoose.connection.readyState === 1 ? "connected" : "connecting"
     });
 };
@@ -84,13 +84,13 @@ if (!process.env.VERCEL) {
     connectDB()
         .then(() => {
             app.listen(PORT, () => 
-                console.log(`TTP CRM API is running on port http://localhost:${PORT}`)
+                console.log(`Nexus CRM API is running on port http://localhost:${PORT}`)
             );
         })
         .catch((err) => {
             console.error("Failed to connect to the database on start:", err.message);
             app.listen(PORT, () => 
-                console.log(`TTP CRM API running (no db) on port http://localhost:${PORT}`)
+                console.log(`Nexus CRM API running (no db) on port http://localhost:${PORT}`)
             );
         });
 }

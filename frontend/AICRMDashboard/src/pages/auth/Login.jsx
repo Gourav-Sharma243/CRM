@@ -35,7 +35,7 @@ export default function Login() {
 
   // Convenience: pre-fill the seeded demo credentials.
   const useDemo = () => {
-    setValue("email", "gourav@test.ca");
+    setValue("email", "gouravhds10@gmail.com");
     setValue("password", "Test@1234");
   };
 
@@ -43,7 +43,7 @@ export default function Login() {
     <AuthShell>
       <h1 className="text-2xl font-bold text-ink">Welcome back</h1>
       <p className="mt-1.5 text-sm text-ink-soft">
-        Sign in to your TTP CRM workspace.
+        Sign in to your Nexus CRM workspace.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4">
